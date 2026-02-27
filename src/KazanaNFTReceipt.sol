@@ -27,11 +27,13 @@ contract KazanaNFTReceipt is ERC721URIStorage, Ownable, Pausable {
 
     // tokenId => Receipt
     mapping(uint256 => Receipt) private _receipts;
+    mapping(bytes32 => bool) private _usedTxHashes;
 
     // Events
     event ReceiptMinted(address indexed merchant, address indexed buyer, uint256 indexed tokenId, uint256 amount, string txHash, string orderId, string metadataURI);
     event MetadataUpdated(uint256 indexed tokenId, string metadataURI);
     event BaseURIUpdated(string baseURI);
+    event TxHashConsumed(bytes32 indexed txHashKey, uint256 indexed tokenId);
 
     // constructor(string memory name_, string memory symbol_) ERC721(name_, symbol_) {
     //     _nextTokenId = 1; // start IDs at 1 (easier human handling)
@@ -76,6 +78,12 @@ contract KazanaNFTReceipt is ERC721URIStorage, Ownable, Pausable {
         require(merchant != address(0), "NFTReceipt: merchant is zero address");
         require(amount > 0, "NFTReceipt: amount must be > 0");
         require(bytes(txHash).length > 0, "NFTReceipt: txHash required");
+        //Prevent duplicate minting
+        
+        bytes32 txHashKey = keccak256(bytes(txHash));
+        require(!_usedTxHashes[txHashKey], "NFTReceipt: receipt already minted for this txHash");
+        _usedTxHashes[txHashKey] = true;
+        
 
         uint256 tokenId = _nextTokenId++;
         _safeMint(buyer, tokenId);
@@ -91,8 +99,16 @@ contract KazanaNFTReceipt is ERC721URIStorage, Ownable, Pausable {
         });
 
         emit ReceiptMinted(merchant, buyer, tokenId, amount, txHash, orderId, metadataURI);
+        emit TxHashConsumed(txHashKey, tokenId); // emit after tokenId is assigned
+
+
         return tokenId;
     }
+
+    /// @notice helper function Returns true if a receipt has already been minted for this txHash
+    function isTxHashUsed(string calldata txHash) external view returns (bool) {
+        return _usedTxHashes[keccak256(bytes(txHash))];
+        }
 
     // @dev Blocks all transfers except mint and burn — makes tokens soulbound. a transfer is valid only if it's a mint (from == address(0)) or a burn (to == address(0)). Any other case (wallet to wallet) gets blocked.
     function _update(address to, uint256 tokenId, address auth)
