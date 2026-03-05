@@ -14,6 +14,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 
 contract KazanaNFTReceipt is ERC721URIStorage, Ownable, Pausable {
     uint256 private _nextTokenId;
+    uint256 public constant METADATA_TIMELOCK = 48 hours;
 
     // Receipt data stored on-chain (read-only for buyer/merchant fields)
     struct Receipt {
@@ -25,15 +26,25 @@ contract KazanaNFTReceipt is ERC721URIStorage, Ownable, Pausable {
         uint256 timestamp;   // block.timestamp when minted
     }
 
+    struct PendingMetadataUpdate {
+    string  newURI;
+    uint256 readyAt;   // timestamp after which it can be executed
+    bool    exists;
+}
+
+
     // tokenId => Receipt
     mapping(uint256 => Receipt) private _receipts;
     mapping(bytes32 => bool) private _usedTxHashes;
+    mapping(uint256 => PendingMetadataUpdate) private _pendingMetadata;
 
     // Events
     event ReceiptMinted(address indexed merchant, address indexed buyer, uint256 indexed tokenId, uint256 amount, string txHash, string orderId, string metadataURI);
     event MetadataUpdated(uint256 indexed tokenId, string metadataURI);
     event BaseURIUpdated(string baseURI);
     event TxHashConsumed(bytes32 indexed txHashKey, uint256 indexed tokenId);
+    event MetadataUpdateProposed(uint256 indexed tokenId, string newURI, uint256 readyAt);
+    event MetadataUpdateCancelled(uint256 indexed tokenId);
 
     // constructor(string memory name_, string memory symbol_) ERC721(name_, symbol_) {
     //     _nextTokenId = 1; // start IDs at 1 (easier human handling)
