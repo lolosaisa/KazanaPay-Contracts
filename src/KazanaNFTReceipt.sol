@@ -154,14 +154,60 @@ contract KazanaNFTReceipt is ERC721URIStorage, Ownable, Pausable {
 
     // --- Metadata update (owner-only) ---
     /**
-     * @notice Update token URI if metadata needs to be repinned or corrected.
+     * @notice Update token URI if metadata needs to be repinned or corrected within the given timelock, after the timer runs out you will not be able to update the metadata.
+     Aproposed metadata runs for 48 hours giving the owner enough time to update incase of a mistake.
+     After the time locks the metadata can not be u                                                                                                                             pdated.
      * Only owner can call.
      */
-    function updateMetadataURI(uint256 tokenId, string calldata metadataURI) external onlyOwner onlyExistingToken(tokenId) {
-        _setTokenURI(tokenId, metadataURI);
-        emit MetadataUpdated(tokenId, metadataURI);
-    }
+    /// @notice Propose a metadata update. Executes only after METADATA_TIMELOCK has passed.
+  function proposeMetadataUpdate(uint256 tokenId, string calldata newURI)
+    external
+    onlyRole(METADATA_ROLE)
+    onlyExistingToken(tokenId)
+{
+    uint256 readyAt = block.timestamp + METADATA_TIMELOCK;
+    _pendingMetadata[tokenId] = PendingMetadataUpdate({
+        newURI:  newURI,
+        readyAt: readyAt,
+        exists:  true
+    });
+    emit MetadataUpdateProposed(tokenId, newURI, readyAt);
+}
 
+/// @notice Execute a previously proposed metadata update after the timelock expires.
+function executeMetadataUpdate(uint256 tokenId)
+    external
+    onlyRole(METADATA_ROLE)
+    onlyExistingToken(tokenId)
+{
+    PendingMetadataUpdate memory pending = _pendingMetadata[tokenId];
+    require(pending.exists, "NFTReceipt: no pending update for this token");
+    require(block.timestamp >= pending.readyAt, "NFTReceipt: timelock not expired yet");
+
+    delete _pendingMetadata[tokenId];
+    _setTokenURI(tokenId, pending.newURI);
+    emit MetadataUpdated(tokenId, pending.newURI);
+}
+
+/// @notice Cancel a pending metadata update before it executes.
+function cancelMetadataUpdate(uint256 tokenId)
+    external
+    onlyRole(METADATA_ROLE)
+    onlyExistingToken(tokenId)
+{
+    require(_pendingMetadata[tokenId].exists, "NFTReceipt: no pending update to cancel");
+    delete _pendingMetadata[tokenId];
+    emit MetadataUpdateCancelled(tokenId);
+}
+
+/// @notice Read helper — check if a token has a pending metadata update.
+function getPendingMetadataUpdate(uint256 tokenId)
+    external
+    view
+    returns (PendingMetadataUpdate memory)
+{
+    return _pendingMetadata[tokenId];
+}
     // --- Admin / pause controls ---
     function pause() external onlyOwner {
         _pause();
